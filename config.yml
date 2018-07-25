@@ -1,0 +1,14 @@
+directories:
+  - path: /Users/khaledblah/repos/chef-repo
+    regex: '*.json'
+encrypt:
+  type: ccrypt
+  keyfile: /Users/khaledblah/repos/chef-repo/secret_keys/avarteq.key
+  suffix: .cpt
+upload:
+  type: rsync
+  rsync:
+    host: localhost
+    username: admin
+    password_file: rsync.password
+    prefix: prefix_path
