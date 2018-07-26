@@ -1,16 +1,16 @@
-log_file: eau.log
+log_file: encrypt-and-upload.log
 log_level: DEBUG
 directories:
-  - path: /Users/khaledblah/repos/chef-repo
-    regex: '*.json'
+  - path: Documents
+    regex: '*.gz'
 encrypt:
   type: ccrypt
-  keyfile: /Users/khaledblah/repos/chef-repo/secret_keys/avarteq.key
+  keyfile: keyfile
   suffix: .cpt
 upload:
   type: rsync
   rsync:
     host: localhost
-    username: admin
+    username: root
     password_file: rsync.password
     prefix: prefix_path
