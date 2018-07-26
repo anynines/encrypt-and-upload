@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import fnmatch
+import logging
 import multiprocessing
 import os
 import random
@@ -21,6 +22,7 @@ def findfiles(directory, pattern):
 class Encrypter(multiprocessing.Process):
   def __init__(self, config, queue_encrypt, queue_uploads):
     multiprocessing.Process.__init__(self)
+    self.logger = logging.getLogger("main")
     self.config = config
     self.queue_encrypt = queue_encrypt
     self.queue_uploads = queue_uploads
@@ -31,11 +33,11 @@ class Encrypter(multiprocessing.Process):
       next_task = self.queue_encrypt.get()
 
       if next_task is None:
-        print '%s: Exiting' % proc_name
+        self.logger.info('%s: Done' % proc_name)
         self.queue_encrypt.task_done()
         break
 
-      print '%s: %s' % (proc_name, next_task)
+      self.logger.debug('%s: %s' % (proc_name, next_task))
 
       if config['encrypt']['type'] == 'ccrypt':
         command = ("ccrypt --encrypt --keyfile %s --suffix %s %s" % \
@@ -45,7 +47,7 @@ class Encrypter(multiprocessing.Process):
             next_task
           )
         )
-        print '%s: %s' % (proc_name, command)
+        self.logger.debug('%s: %s' % (proc_name, command))
         time.sleep(random.random() * 10)
 
       self.queue_encrypt.task_done()
@@ -55,6 +57,7 @@ class Encrypter(multiprocessing.Process):
 class Uploader(multiprocessing.Process):
   def __init__(self, config, queue_uploads):
     multiprocessing.Process.__init__(self)
+    self.logger = logging.getLogger("main")
     self.config = config
     self.queue_uploads = queue_uploads
 
@@ -64,11 +67,11 @@ class Uploader(multiprocessing.Process):
       next_task = self.queue_uploads.get()
 
       if next_task is None:
-        print '%s: Exiting' % proc_name
+        self.logger.info('%s: Done' % proc_name)
         self.queue_uploads.task_done()
         break
 
-      print '%s: %s' % (proc_name, next_task)
+      self.logger.debug('%s: %s' % (proc_name, next_task))
 
       if config['upload']['type'] == 'rsync':
         command = "rsync --password-file %s %s %s@%s:" % \
@@ -83,7 +86,7 @@ class Uploader(multiprocessing.Process):
           command += '/' + config['upload']['rsync']['prefix']
 
         command += '/' + os.path.basename(next_task)
-        print '%s: %s' % (proc_name, command)
+        self.logger.debug('%s: %s' % (proc_name, command))
         time.sleep(random.random() * 10)
 
       self.queue_uploads.task_done()
@@ -106,27 +109,45 @@ if __name__ == "__main__":
     except yaml.YAMLError as exc:
       print(exc)
 
+  if not 'log_file' in config.keys():
+    config['log_file'] = '/var/log/encrypt-and-upload.log'
+
+  if not 'log_level' in config.keys():
+    config['log_level'] = 'INFO'
+
+  logger = logging.getLogger("main")
+  logger.setLevel(config['log_level'])
+
+  # create the logging file handler
+  fh = logging.FileHandler(config['log_file'])
+
+  formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+  fh.setFormatter(formatter)
+
+  # add handler to logger object
+  logger.addHandler(fh)
+
   if 'encrypt' not in config.keys() or 'type' not in config['encrypt'].keys():
-    print "No encryption configuration specified!"
+    logger.fatal("No encryption configuration specified!")
     sys.exit(1)
 
   if config['encrypt']['type'] == 'ccrypt':
     for var in ['keyfile', 'suffix']:
       if var not in config['encrypt'].keys():
-        print "Encryption with ccrypt requested but %s not specified!" % var
+        logger.fatal("Encryption with ccrypt requested but %s not specified!" % var)
         sys.exit(1)
 
   if 'upload' not in config.keys() or 'type' not in config['upload'].keys():
-    print "No upload configuration specified!"
+    logger.fatal("No upload configuration specified!")
     sys.exit(2)
 
   if config['upload']['type'] == 'rsync' and 'rsync' not in config['upload'].keys():
-    print "No rsync configuration specified!"
+    logger.fatal("No rsync configuration specified!")
     sys.exit(2)
 
   for var in ['host', 'username', 'password_file']:
     if var not in config['upload']['rsync'].keys():
-      print "Upload using rsync request but '%s' not specified!" % var
+      logger.fatal("Upload using rsync request but '%s' not specified!" % var)
       sys.exit(2)
 
   queue_encrypt = multiprocessing.JoinableQueue()
