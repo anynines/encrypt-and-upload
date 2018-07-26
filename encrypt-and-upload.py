@@ -7,6 +7,7 @@ import logging
 import multiprocessing
 import os
 import random
+import subprocess
 import sys
 import tarfile
 import time
@@ -22,62 +23,68 @@ def findfiles(directory, pattern):
 class Encrypter(multiprocessing.Process):
   def __init__(self, config, queue_encrypt, queue_uploads):
     multiprocessing.Process.__init__(self)
-    self.logger = logging.getLogger("main")
     self.config = config
     self.queue_encrypt = queue_encrypt
     self.queue_uploads = queue_uploads
 
   def run(self):
+    logger = logging.getLogger("main")
     proc_name = self.name
     while True:
-      next_task = self.queue_encrypt.get()
+      next_file = self.queue_encrypt.get()
 
-      if next_task is None:
-        self.logger.info('%s: Done' % proc_name)
+      if next_file is None:
+        logger.info('%s: Done' % proc_name)
         self.queue_encrypt.task_done()
         break
 
-      self.logger.debug('%s: %s' % (proc_name, next_task))
+      logger.info("Encrypting: %s (%s)" % (next_file, proc_name))
 
       if config['encrypt']['type'] == 'ccrypt':
         command = ("ccrypt --encrypt --keyfile %s --suffix %s %s" % \
           (
             config['encrypt']['keyfile'],
             config['encrypt']['suffix'],
-            next_task
+            next_file
           )
         )
-        self.logger.debug('%s: %s' % (proc_name, command))
-        time.sleep(random.random() * 10)
+        logger.debug('%s: %s' % (proc_name, command))
+
+        if not config['dry_run']:
+          process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          output, _ = process.communicate()
+          logger.info(output)
+        else:
+          time.sleep(random.random() * 0.1)
 
       self.queue_encrypt.task_done()
-      self.queue_uploads.put(next_task + config['encrypt']['suffix'])
+      self.queue_uploads.put(next_file + config['encrypt']['suffix'])
     return
 
 class Uploader(multiprocessing.Process):
   def __init__(self, config, queue_uploads):
     multiprocessing.Process.__init__(self)
-    self.logger = logging.getLogger("main")
     self.config = config
     self.queue_uploads = queue_uploads
 
   def run(self):
+    logger = logging.getLogger("main")
     proc_name = self.name
     while True:
-      next_task = self.queue_uploads.get()
+      next_file = self.queue_uploads.get()
 
-      if next_task is None:
-        self.logger.info('%s: Done' % proc_name)
+      if next_file is None:
+        logger.info('%s: Done' % proc_name)
         self.queue_uploads.task_done()
         break
 
-      self.logger.debug('%s: %s' % (proc_name, next_task))
+      logger.info("Uploading: %s (%s)" % (next_file, proc_name))
 
       if config['upload']['type'] == 'rsync':
         command = "rsync --password-file %s %s %s@%s:" % \
           (
             config['upload']['rsync']['password_file'],
-            next_task + config['encrypt']['suffix'],
+            next_file + config['encrypt']['suffix'],
             config['upload']['rsync']['username'],
             config['upload']['rsync']['host']
           )
@@ -85,9 +92,15 @@ class Uploader(multiprocessing.Process):
         if 'prefix' in config['upload']['rsync'].keys():
           command += '/' + config['upload']['rsync']['prefix']
 
-        command += '/' + os.path.basename(next_task)
-        self.logger.debug('%s: %s' % (proc_name, command))
-        time.sleep(random.random() * 10)
+        command += '/' + os.path.basename(next_file)
+        logger.debug('%s: %s' % (proc_name, command))
+
+        if not config['dry_run']:
+          process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          output, _ = process.communicate()
+          logger.info(output)
+        else:
+          time.sleep(random.random() * 0.1)
 
       self.queue_uploads.task_done()
     return
@@ -96,6 +109,9 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser(description = 'Read configuration')
   parser.add_argument('--config', required=True, dest='config',
                       help='path to configuration file (YAML)')
+  parser.add_argument('--dry-run', dest='dry_run', action='store_true',
+                      default=False,
+                      help='If specified, commands will not executed')
 
   args = parser.parse_args()
 
@@ -109,23 +125,29 @@ if __name__ == "__main__":
     except yaml.YAMLError as exc:
       print(exc)
 
+  config['dry_run'] = args.dry_run
+
   if not 'log_file' in config.keys():
     config['log_file'] = '/var/log/encrypt-and-upload.log'
 
   if not 'log_level' in config.keys():
-    config['log_level'] = 'INFO'
+    config['log_level'] = 'DEBUG'
 
+  # The logger object for this scripts
   logger = logging.getLogger("main")
   logger.setLevel(config['log_level'])
 
   # create the logging file handler
-  fh = logging.FileHandler(config['log_file'])
+  fh = logging.FileHandler(config['log_file'], mode='w')
+  fh.setLevel(config['log_level'])
 
-  formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+  formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
   fh.setFormatter(formatter)
-
-  # add handler to logger object
   logger.addHandler(fh)
+
+  if len(files) == 0:
+    logger.info("No files were found in any of the directories!")
+    sys.exit(0)
 
   if 'encrypt' not in config.keys() or 'type' not in config['encrypt'].keys():
     logger.fatal("No encryption configuration specified!")

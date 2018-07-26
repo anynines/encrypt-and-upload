@@ -1,3 +1,5 @@
+log_file: eau.log
+log_level: DEBUG
 directories:
   - path: /Users/khaledblah/repos/chef-repo
     regex: '*.json'
