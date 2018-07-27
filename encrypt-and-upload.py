@@ -82,11 +82,11 @@ class Uploader(multiprocessing.Process):
 
       command = None
       if config['upload']['type'] == 'rsync':
-        command = "rsync --password-file %s %s %s@%s:" % \
+        command = "rsync --rsh='/usr/bin/sshpass -f %s ssh -o StrictHostKeyChecking=no -l %s' %s %s:" % \
           (
             config['upload']['rsync']['password_file'],
-            next_file + config['encrypt']['suffix'],
             config['upload']['rsync']['username'],
+            next_file,
             config['upload']['rsync']['host']
           )
 
@@ -97,7 +97,7 @@ class Uploader(multiprocessing.Process):
         command = "aws --profile %s s3 cp %s s3://%s" % \
           (
             config['upload']['s3']['profile'],
-            next_file + config['encrypt']['suffix'],
+            next_file,
             config['upload']['s3']['bucket']
           )
 
