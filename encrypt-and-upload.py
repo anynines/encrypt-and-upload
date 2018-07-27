@@ -80,6 +80,7 @@ class Uploader(multiprocessing.Process):
 
       logger.info("Uploading: %s (%s)" % (next_file, proc_name))
 
+      command = None
       if config['upload']['type'] == 'rsync':
         command = "rsync --password-file %s %s %s@%s:" % \
           (
@@ -92,15 +93,26 @@ class Uploader(multiprocessing.Process):
         if 'prefix' in config['upload']['rsync'].keys():
           command += '/' + config['upload']['rsync']['prefix']
 
-        command += '/' + os.path.basename(next_file)
-        logger.debug('%s: %s' % (proc_name, command))
+      if config['upload']['type'] == 's3':
+        command = "aws --profile %s s3 cp %s s3://%s" % \
+          (
+            config['upload']['s3']['profile'],
+            next_file + config['encrypt']['suffix'],
+            config['upload']['s3']['bucket']
+          )
 
-        if not config['dry_run']:
-          process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-          output, _ = process.communicate()
-          logger.info(output)
-        else:
-          time.sleep(random.random() * 0.1)
+        if 'prefix' in config['upload']['s3'].keys():
+          command += '/' + config['upload']['s3']['prefix']
+
+      command += '/' + os.path.basename(next_file)
+      logger.debug('%s: %s' % (proc_name, command))
+
+      if not config['dry_run']:
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output, _ = process.communicate()
+        logger.info(output)
+      else:
+        time.sleep(random.random() * 0.1)
 
       self.queue_uploads.task_done()
     return
@@ -167,10 +179,21 @@ if __name__ == "__main__":
     logger.fatal("No rsync configuration specified!")
     sys.exit(2)
 
-  for var in ['host', 'username', 'password_file']:
-    if var not in config['upload']['rsync'].keys():
-      logger.fatal("Upload using rsync request but '%s' not specified!" % var)
-      sys.exit(2)
+  if config['upload']['type'] == 'rsync':
+    for var in ['host', 'username', 'password_file']:
+      if var not in config['upload']['rsync'].keys():
+        logger.fatal("Upload using rsync request but '%s' not specified!" % var)
+        sys.exit(2)
+
+  if config['upload']['type'] == 's3' and 's3' not in config['upload'].keys():
+    logger.fatal("No s3 configuration specified!")
+    sys.exit(2)
+
+  if config['upload']['type'] == 's3':
+    for var in ['profile', 'bucket']:
+      if var not in config['upload']['s3'].keys():
+        logger.fatal("Upload using rsync request but '%s' not specified!" % var)
+        sys.exit(2)
 
   queue_encrypt = multiprocessing.JoinableQueue()
   queue_uploads = multiprocessing.JoinableQueue()

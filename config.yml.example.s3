@@ -1,0 +1,15 @@
+log_file: encrypt-and-upload.log
+log_level: DEBUG
+directories:
+  - path: Documents
+    regex: '*.gz'
+encrypt:
+  type: ccrypt
+  keyfile: keyfile
+  suffix: .cpt
+upload:
+  type: s3
+  s3:
+    profile: customer
+    bucket: s3-bucket
+    prefix: s3-prefix
