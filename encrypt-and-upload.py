@@ -38,6 +38,7 @@ class Encrypter(multiprocessing.Process):
         self.queue_encrypt.task_done()
         break
 
+      next_file = os.path.realpath(next_file)
       logger.info("Encrypting: %s (%s)" % (next_file, proc_name))
 
       if config['encrypt']['type'] == 'ccrypt':
