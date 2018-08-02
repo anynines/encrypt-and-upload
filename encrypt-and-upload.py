@@ -197,7 +197,7 @@ if __name__ == "__main__":
 
   queue_encrypt = multiprocessing.JoinableQueue()
   queue_uploads = multiprocessing.JoinableQueue()
-  num_consumers = multiprocessing.cpu_count() - 2
+  num_consumers = min(4, multiprocessing.cpu_count() - 2)
 
   encrypters = [ Encrypter(config, queue_encrypt, queue_uploads)
                 for i in xrange(num_consumers) ]
