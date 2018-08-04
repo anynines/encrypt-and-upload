@@ -4,6 +4,7 @@ import argparse
 import datetime
 import fnmatch
 import logging
+import logging.handlers
 import multiprocessing
 import os
 import random
@@ -151,12 +152,15 @@ if __name__ == "__main__":
   logger.setLevel(config['log_level'])
 
   # create the logging file handler
-  fh = logging.FileHandler(config['log_file'], mode='w')
+  needRoll = os.path.isfile(config['log_file'])
+  fh = logging.handlers.RotatingFileHandler(config['log_file'], backupCount=50)
   fh.setLevel(config['log_level'])
 
   formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
   fh.setFormatter(formatter)
   logger.addHandler(fh)
+  if needRoll:
+    logger.handlers[0].doRollover()
 
   if len(files) == 0:
     logger.info("No files were found in any of the directories!")
