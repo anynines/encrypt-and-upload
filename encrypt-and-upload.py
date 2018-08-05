@@ -96,7 +96,7 @@ class Uploader(multiprocessing.Process):
           command += '/' + config['upload']['rsync']['prefix']
 
       if config['upload']['type'] == 's3':
-        command = "aws --profile %s s3 cp %s s3://%s" % \
+        command = "/usr/local/bin/aws --profile %s s3 cp %s s3://%s" % \
           (
             config['upload']['s3']['profile'],
             next_file,
