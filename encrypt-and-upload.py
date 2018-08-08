@@ -43,14 +43,16 @@ class Encrypter(multiprocessing.Process):
       logger.info("Encrypting: %s (%s)" % (next_file, proc_name))
 
       if config['encrypt']['type'] == 'ccrypt':
-        command = ("ccrypt --encrypt --keyfile %s --suffix %s %s" % \
-          (
-            config['encrypt']['keyfile'],
-            config['encrypt']['suffix'],
-            next_file
-          )
-        )
-        logger.debug('%s: %s' % (proc_name, command))
+        command = [
+          'ccrypt',
+          '--encrypt',
+          '--keyfile',
+          config['encrypt']['keyfile'],
+          '--suffix',
+          config['encrypt']['suffix'],
+          next_file
+        ]
+        logger.debug('%s: %s' % (proc_name, ' '.join(command)))
 
         if not config['dry_run']:
           process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -82,33 +84,67 @@ class Uploader(multiprocessing.Process):
 
       logger.info("Uploading: %s (%s)" % (next_file, proc_name))
 
-      command = None
+      command = []
       if config['upload']['type'] == 'rsync':
-        command = "rsync --rsh='/usr/bin/sshpass -f %s ssh -o StrictHostKeyChecking=no -l %s' %s %s:" % \
-          (
-            config['upload']['rsync']['password_file'],
-            config['upload']['rsync']['username'],
-            next_file,
-            config['upload']['rsync']['host']
-          )
+        rsh_string = "--rsh='/usr/bin/sshpass -f %s ssh -o StrictHostKeyChecking=no -l %s'" % (config['upload']['rsync']['password_file'], config['upload']['rsync']['username'])
+        command = [
+          'rsync',
+          rsh_string,
+          next_file
+        ]
 
+        dest_string = config['upload']['rsync']['host'] + ':'
         if 'prefix' in config['upload']['rsync'].keys():
-          command += '/' + config['upload']['rsync']['prefix']
+          dest_string += config['upload']['rsync']['prefix']
+
+        dest_string += '/' + os.path.basename(next_file)
+        command.append(dest_string)
 
       if config['upload']['type'] == 's3':
-        command = "/usr/local/bin/aws --profile %s s3 cp %s s3://%s" % \
-          (
-            config['upload']['s3']['profile'],
-            next_file,
-            config['upload']['s3']['bucket']
-          )
+        command = [
+          '/usr/local/bin/aws',
+          '--profile',
+          config['upload']['s3']['profile'],
+          's3',
+          'cp',
+          next_file
+        ]
 
+        dest_string = 's3://' + config['upload']['s3']['profile'] + '/'
         if 'prefix' in config['upload']['s3'].keys():
-          command += '/' + config['upload']['s3']['prefix']
+          dest_string += config['upload']['s3']['prefix'] + '/'
 
-      command += '/' + os.path.basename(next_file)
-      logger.debug('%s: %s' % (proc_name, command))
+        dest_string += os.path.basename(next_file)
+        command.append(dest_string)
 
+      if config['upload']['type'] == 'copy':
+        dest_file = config['upload']['copy']['path'] + '/' + os.path.basename(next_file)
+        command = [
+          'cp',
+          '-f',
+          next_file,
+          dest_file
+        ]
+
+        if 'owner' in config['upload']['copy'].keys():
+          command += [
+            '&&',
+            'chown',
+            '-f',
+            config['upload']['copy']['owner'] + ':',
+            dest_file
+          ]
+
+        if 'mode' in config['upload']['copy'].keys():
+          command += [
+            '&&',
+            'chmod',
+            '-f',
+            config['upload']['copy']['mode'],
+            dest_file
+          ]
+
+      logger.debug('%s: %s' % (proc_name, ' '.join(command)))
       if not config['dry_run']:
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         output, _ = process.communicate()
@@ -187,7 +223,7 @@ if __name__ == "__main__":
   if config['upload']['type'] == 'rsync':
     for var in ['host', 'username', 'password_file']:
       if var not in config['upload']['rsync'].keys():
-        logger.fatal("Upload using rsync request but '%s' not specified!" % var)
+        logger.fatal("Upload using rsync requested but '%s' not specified!" % var)
         sys.exit(2)
 
   if config['upload']['type'] == 's3' and 's3' not in config['upload'].keys():
@@ -197,7 +233,17 @@ if __name__ == "__main__":
   if config['upload']['type'] == 's3':
     for var in ['profile', 'bucket']:
       if var not in config['upload']['s3'].keys():
-        logger.fatal("Upload using rsync request but '%s' not specified!" % var)
+        logger.fatal("Upload using s3 requested but '%s' not specified!" % var)
+        sys.exit(2)
+
+  if config['upload']['type'] == 'copy' and 'copy' not in config['upload'].keys():
+    logger.fatal("No copy configuration specified!")
+    sys.exit(2)
+
+  if config['upload']['type'] == 'copy':
+    for var in ['path']:
+      if var not in config['upload']['copy'].keys():
+        logger.fatal("Upload using copy requested but '%s' not specified!" % var)
         sys.exit(2)
 
   queue_encrypt = multiprocessing.JoinableQueue()
