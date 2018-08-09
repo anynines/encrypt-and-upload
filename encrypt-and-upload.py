@@ -44,8 +44,11 @@ class Encrypter(multiprocessing.Process):
       next_file = os.path.realpath(next_file)
       queue_file = next_file
 
+      command = []
       if config['encrypt']['type'] == 'none':
         logger.info("Not encrypting: %s (%s)" % (next_file, proc_name))
+        if not config['dry_run']:
+          time.sleep(random.random() * 0.1)
 
       if config['encrypt']['type'] == 'ccrypt':
         queue_file += config['encrypt']['suffix']
@@ -61,12 +64,13 @@ class Encrypter(multiprocessing.Process):
         ]
         logger.debug('%s: %s' % (proc_name, ' '.join(command)))
 
-        if not config['dry_run']:
+      if not config['dry_run']:
+        if len(command) > 0:
           process = subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
           output, _ = process.communicate()
           logger.info(output)
-        else:
-          time.sleep(random.random() * 0.1)
+      else:
+        time.sleep(random.random() * 0.1)
 
       self.queue_encrypt.task_done()
       self.queue_uploads.put(queue_file)
@@ -251,12 +255,12 @@ if __name__ == "__main__":
   encrypters = [ Encrypter(config, queue_encrypt, queue_uploads)
                 for i in xrange(num_consumers) ]
   for w in encrypters:
-      w.start()
+    w.start()
 
   uploaders = [ Uploader(config, queue_uploads)
                 for i in xrange(num_consumers) ]
   for w in uploaders:
-      w.start()
+    w.start()
 
   for file_path in files:
     queue_encrypt.put(file_path)
