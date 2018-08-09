@@ -7,7 +7,9 @@ import logging
 import logging.handlers
 import multiprocessing
 import os
+import pwd
 import random
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -40,9 +42,14 @@ class Encrypter(multiprocessing.Process):
         break
 
       next_file = os.path.realpath(next_file)
-      logger.info("Encrypting: %s (%s)" % (next_file, proc_name))
+      queue_file = next_file
+
+      if config['encrypt']['type'] == 'none':
+        logger.info("Not encrypting: %s (%s)" % (next_file, proc_name))
 
       if config['encrypt']['type'] == 'ccrypt':
+        queue_file += config['encrypt']['suffix']
+        logger.info("Encrypting: %s (%s)" % (next_file, proc_name))
         command = [
           'ccrypt',
           '--encrypt',
@@ -55,14 +62,14 @@ class Encrypter(multiprocessing.Process):
         logger.debug('%s: %s' % (proc_name, ' '.join(command)))
 
         if not config['dry_run']:
-          process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          process = subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
           output, _ = process.communicate()
           logger.info(output)
         else:
           time.sleep(random.random() * 0.1)
 
       self.queue_encrypt.task_done()
-      self.queue_uploads.put(next_file + config['encrypt']['suffix'])
+      self.queue_uploads.put(queue_file)
     return
 
 class Uploader(multiprocessing.Process):
@@ -118,37 +125,28 @@ class Uploader(multiprocessing.Process):
         command.append(dest_string)
 
       if config['upload']['type'] == 'copy':
-        dest_file = config['upload']['copy']['path'] + '/' + os.path.basename(next_file)
-        command = [
-          'cp',
-          '-f',
-          next_file,
-          dest_file
-        ]
+        dest_file = os.path.join(config['upload']['copy']['path'], os.path.basename(next_file))
+        logger.info("Copying file '%s' to '%s'" % (next_file, dest_file))
+        if not config['dry_run']:
+          shutil.copyfile(next_file, dest_file)
 
-        if 'owner' in config['upload']['copy'].keys():
-          command += [
-            '&&',
-            'chown',
-            '-f',
-            config['upload']['copy']['owner'] + ':',
-            dest_file
-          ]
+        if not config['dry_run'] and 'owner' in config['upload']['copy'].keys():
+          uid = pwd.getpwnam(config['upload']['copy']['owner']).pw_uid
+          gid = pwd.getpwnam(config['upload']['copy']['owner']).pw_gid
+          os.chown(dest_file, uid, gid)
 
-        if 'mode' in config['upload']['copy'].keys():
-          command += [
-            '&&',
-            'chmod',
-            '-f',
-            config['upload']['copy']['mode'],
-            dest_file
-          ]
+        if not config['dry_run'] and 'mode' in config['upload']['copy'].keys():
+          mode = config['upload']['copy']['mode']
+          if type(config['upload']['copy']['mode']) is str:
+            mode = int(config['upload']['copy']['mode'], 8)
+          os.chmod(dest_file, mode)
 
       logger.debug('%s: %s' % (proc_name, ' '.join(command)))
       if not config['dry_run']:
-        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        output, _ = process.communicate()
-        logger.info(output)
+        if len(command) > 0:
+          process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          output, _ = process.communicate()
+          logger.info(output)
       else:
         time.sleep(random.random() * 0.1)
 
