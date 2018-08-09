@@ -48,6 +48,9 @@ class Encrypter(multiprocessing.Process):
       if config['encrypt']['type'] == 'none':
         logger.info("Not encrypting: %s (%s)" % (next_file, proc_name))
         if not config['dry_run']:
+          # ugly hack: for some reason this "sleep" is needed, otherwise we'll
+          # run into a race condition/timing issue with the "queue_uploads"
+          # queue
           time.sleep(random.random() * 0.1)
 
       if config['encrypt']['type'] == 'ccrypt':
