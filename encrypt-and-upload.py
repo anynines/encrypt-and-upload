@@ -69,7 +69,7 @@ class Encrypter(multiprocessing.Process):
 
       if not config['dry_run']:
         if len(command) > 0:
-          process = subprocess.Popen(command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
           output, _ = process.communicate()
           logger.info(output)
       else:
@@ -100,7 +100,7 @@ class Uploader(multiprocessing.Process):
 
       command = []
       if config['upload']['type'] == 'rsync':
-        rsh_string = "--rsh='/usr/bin/sshpass -f %s ssh -o StrictHostKeyChecking=no -l %s'" % (config['upload']['rsync']['password_file'], config['upload']['rsync']['username'])
+        rsh_string = "--rsh=/usr/bin/sshpass -f %s ssh -o StrictHostKeyChecking=no -l %s" % (config['upload']['rsync']['password_file'], config['upload']['rsync']['username'])
         command = [
           'rsync',
           rsh_string,
@@ -151,7 +151,7 @@ class Uploader(multiprocessing.Process):
       logger.debug('%s: %s' % (proc_name, ' '.join(command)))
       if not config['dry_run']:
         if len(command) > 0:
-          process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
           output, _ = process.communicate()
           logger.info(output)
       else:
