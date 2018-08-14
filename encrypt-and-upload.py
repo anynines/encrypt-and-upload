@@ -124,7 +124,7 @@ class Uploader(multiprocessing.Process):
           next_file
         ]
 
-        dest_string = 's3://' + config['upload']['s3']['profile'] + '/'
+        dest_string = 's3://' + config['upload']['s3']['bucket'] + '/'
         if 'prefix' in config['upload']['s3'].keys():
           dest_string += config['upload']['s3']['prefix'] + '/'
 
