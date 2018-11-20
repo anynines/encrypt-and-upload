@@ -253,25 +253,25 @@ if __name__ == "__main__":
 
   queue_encrypt = multiprocessing.JoinableQueue()
   queue_uploads = multiprocessing.JoinableQueue()
-  num_consumers = min(4, multiprocessing.cpu_count() - 2)
+  num_consumers = min(4, len(files))
 
   encrypters = [ Encrypter(config, queue_encrypt, queue_uploads)
-                for i in xrange(num_consumers) ]
+                for i in range(num_consumers) ]
   for w in encrypters:
     w.start()
 
   uploaders = [ Uploader(config, queue_uploads)
-                for i in xrange(num_consumers) ]
+                for i in range(num_consumers) ]
   for w in uploaders:
     w.start()
 
   for file_path in files:
     queue_encrypt.put(file_path)
 
-  for i in xrange(num_consumers):
+  for i in range(num_consumers):
     queue_encrypt.put(None)
   queue_encrypt.join()
 
-  for i in xrange(num_consumers):
+  for i in range(num_consumers):
     queue_uploads.put(None)
   queue_uploads.join()

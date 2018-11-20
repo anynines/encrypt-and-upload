@@ -108,3 +108,6 @@ config.yml
 config.copy.yml
 config.rsync.yml
 config.s3.yml
+
+# VSCode
+.vscode*
