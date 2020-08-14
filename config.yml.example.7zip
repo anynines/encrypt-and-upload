@@ -1,0 +1,20 @@
+log_file: encrypt-and-upload.log
+log_level: DEBUG
+certificates:
+  domains:
+    - www.example.com
+  file_path: /etc/letsencrypt/live
+  sent_file_path: /var/cache/sent_certificates
+encrypt:
+  type: 7zip
+  key: password
+upload:
+  type: email
+  email:
+    host: smtp.example.com
+    user: username
+    password: password
+    sender: admin@anynines.com
+    recipients:
+      - recipient@example.org
+    use_tls: true
