@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import binascii
 import datetime
 import fnmatch
 import logging
@@ -36,7 +37,6 @@ class CertificateManager():
   
   def run(self):
     logger = logging.getLogger("main")
-    proc_name = self.name
     domain_objects = []
     for domain in config['certificates']['domains']:
       full_cert_path = os.path.join(config['certificates']['file_path'], domain, 'cert.pem')
@@ -45,12 +45,14 @@ class CertificateManager():
       cert_file.close()
 
       cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
-      cert_fingerprint = cert.fingerprint(hashes.SHA256())
+      cert_fingerprint = binascii.hexlify(cert.fingerprint(hashes.SHA256())).decode('ascii')
 
       sent_file_path_full = os.path.join(config['certificates']['sent_file_path'], cert_fingerprint)
       if not os.path.isfile(sent_file_path_full):
         logger.info("Sending certificate for domain: %s" % domain)
-        domain_objects.push({'domain': domain, 'fingerprint': cert_fingerprint})
+        domain_objects.append({'domain': domain, 'fingerprint': cert_fingerprint})
+      else:
+        logger.info("Certificate for domain: '%s' with fingerprint '%s' already sent" % (domain, cert_fingerprint))
     return domain_objects
 
 class Encrypter():
@@ -60,12 +62,11 @@ class Encrypter():
 
   def run(self):
     logger = logging.getLogger("main")
-    proc_name = self.name
 
     zip_paths = []
     for domain_object in domain_objects:
       if config['encrypt']['type'] == 'none':
-        logger.info("Not encrypting: %s (%s)" % (domain_object['domain'], proc_name))
+        logger.info("Not encrypting: %s" % domain_object['domain'])
         if not config['dry_run']:
           # ugly hack: for some reason this "sleep" is needed, otherwise we'll
           # run into a race condition/timing issue with the "queue_uploads"
@@ -79,7 +80,7 @@ class Encrypter():
           "%s.tar" % domain_object['domain'],
           domain_object['domain']
         ]
-        logger.debug("%s: execute '%s'" % (proc_name, ' '.join(tar_command)))
+        logger.info("Executing command: '%s'" % ' '.join(tar_command))
 
         if not config['dry_run']:
           if len(tar_command) > 0:
@@ -89,16 +90,17 @@ class Encrypter():
               stdout=subprocess.PIPE,
               stderr=subprocess.STDOUT
             )
-            output, _ = process.communicate()
-            logger.info(output)
+            output, stderr = process.communicate()
             if process.returncode > 0:
-              logger.fatal("Creating the TAR archive failed for domain: %s" % domain_object['domain'])
+              logger.fatal("Creating the TAR archive failed for domain: '%s'. Stderr: %s" % (domain_object['domain'], stderr))
               sys.exit(3)
+
+            logger.info('Success')
         else:
           time.sleep(random.random() * 0.1)
 
         full_tar_path = os.path.join(config['certificates']['file_path'], "%s.tar" % domain_object['domain'])
-        logger.info("Encrypting: %s (%s)" % (full_tar_path, proc_name))
+        logger.info("Encrypting: '%s'" % full_tar_path)
         zip_command = [
           '/usr/bin/7z',
           'a',
@@ -109,7 +111,7 @@ class Encrypter():
           "%s.7z" % domain_object['domain'],
           "%s.tar" % domain_object['domain']
         ]
-        logger.debug("%s: execute '%s'" % (proc_name, ' '.join(zip_command)))
+        logger.info("Executing command: '%s'" % ' '.join(zip_command))
 
         if not config['dry_run']:
           if len(zip_command) > 0:
@@ -119,14 +121,14 @@ class Encrypter():
               stdout=subprocess.PIPE,
               stderr=subprocess.STDOUT
             )
-            output, _ = process.communicate()
-            logger.info(output)
+            output, stderr = process.communicate()
             if process.returncode > 0:
-              logger.fatal("Encrypting the TAR archive failed for domain: %s" % domain_object['domain'])
+              logger.fatal("Encrypting the TAR archive failed for domain: '%s'. Stderr: %s" % (domain_object['domain'], stderr))
               sys.exit(3)
-            
+
+            logger.info('Success')
             full_zip_path = os.path.join(config['certificates']['file_path'], "%s.7z" % domain_object['domain'])
-            zip_paths.push({
+            zip_paths.append({
               'domain': domain_object['domain'],
               'fingerprint': domain_object['fingerprint'],
               'zip_path': full_zip_path
@@ -145,18 +147,17 @@ class Uploader():
 
   def run(self):
     logger = logging.getLogger("main")
-    proc_name = self.name
 
     for zip_path in zip_paths:
-      logger.info("Uploading: %s (%s)" % (zip_path['domain'], proc_name))
       if config['upload']['type'] == 'email':
+        logger.info("Sending certificate for domain via email: '%s'" % zip_path['domain'])
         msg = MIMEMultipart()
         msg['From'] = config['upload']['email']['sender']
         msg['To'] = COMMASPACE.join(config['upload']['email']['recipients'])
         msg['Date'] = formatdate(localtime=True)
         msg['Subject'] = "New certificate for domain: %s" % zip_path['domain']
 
-        msg.attach(MIMEText("Find the latest SSL/TLS certificate for domain '%s' attached to this email and encrypted with the agreed upon key\n\n" %s zip_path['domain']))
+        msg.attach(MIMEText("Find the latest SSL/TLS certificate for domain '%s' attached to this email and encrypted with the agreed upon key\n\n" % zip_path['domain']))
 
         with open(zip_path['zip_path'], "rb") as fil:
           part = MIMEApplication(
@@ -179,14 +180,15 @@ class Uploader():
               msg.as_string()
             )
             smtp.close()
+            logger.info("Email server accepted email for domain: '%s'" % zip_path['domain'])
 
             # create the "sent file" for this certificate (ID'd by fingerprint)
             # which - if it exists - indicates that the certificate has already
             # been sent
             sent_file_path_full = os.path.join(config['certificates']['sent_file_path'], zip_path['fingerprint'])
             open(sent_file_path_full, 'a').close()
-        except SMTPAuthenticationError:
-          logger.fatal("Authenticating towards server '%s' failed" %s config['upload']['email']['host'])
+        except smtplib.SMTPAuthenticationError:
+          logger.fatal("Authenticating towards server '%s' failed" % config['upload']['email']['host'])
         finally:
           if os.path.exists(zip_path['zip_path']):
             os.remove(zip_path['zip_path'])
@@ -201,6 +203,11 @@ if __name__ == "__main__":
                       help='If specified, commands will not executed')
 
   args = parser.parse_args()
+  with open(args.config, 'r') as stream:
+    try:
+      config = yaml.load(stream)
+    except yaml.YAMLError as exc:
+      print(exc)
   config['dry_run'] = args.dry_run
 
   if not 'log_file' in config.keys():
