@@ -1,0 +1,31 @@
+log_file: encrypt-upload-notify.log
+log_level: DEBUG
+binaries:
+  tar: '/usr/bin/tar'
+  7z: '/usr/local/bin/7zz'
+  aws: '/usr/local/bin/aws'
+certificates:
+  domains:
+    - www.example.com
+  file_path: ./tmp
+  sent_file_path: /var/cache/sent_certificates
+encrypt:
+  type: 7zip
+  key: password
+upload:
+  type: s3
+  s3:
+    profile: customer
+    bucket: s3-bucket
+    prefix: s3-prefix
+    region: eu-central-1
+notification:
+  type: email
+  email:
+    host: smtp.example.com
+    user: username
+    password: password
+    sender: admin@anynines.com
+    recipients:
+      - recipient@example.org
+    use_tls: true
