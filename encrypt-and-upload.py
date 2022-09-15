@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import argparse
 import datetime
@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import yaml
 
@@ -151,9 +152,10 @@ class Uploader(multiprocessing.Process):
       logger.debug('%s: %s' % (proc_name, ' '.join(command)))
       if not config['dry_run']:
         if len(command) > 0:
-          process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-          output, _ = process.communicate()
-          logger.info(output)
+          with tempfile.NamedTemporaryFile() as tmpfile:
+            process = subprocess.Popen(command, stdout=tmpfile, stderr=subprocess.STDOUT)
+            exitcode = process.wait()
+            logger.info(tmpfile.readlines())
       else:
         time.sleep(random.random() * 0.1)
 
