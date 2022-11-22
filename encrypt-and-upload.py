@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import datetime
-import fnmatch
 import logging
 import logging.handlers
 import multiprocessing
@@ -12,8 +10,6 @@ import random
 import shutil
 import subprocess
 import sys
-import tarfile
-import tempfile
 import time
 import yaml
 
@@ -71,13 +67,17 @@ class Encrypter(multiprocessing.Process):
       if not config['dry_run']:
         if len(command) > 0:
           process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-          output, _ = process.communicate()
-          logger.info(output)
+          stdout_data, stderr_data = process.communicate()
+          logger.info('%s output on stdout: %s' % (proc_name, stdout_data))
+          logger.debug('%s output on stderr: %s' % (proc_name, stderr_data))
       else:
         time.sleep(random.random() * 0.1)
 
+      logger.debug('%s: %s' % (proc_name, 'self.queue_encrypt.task_done()'))
       self.queue_encrypt.task_done()
+      logger.debug('%s: %s' % (proc_name, 'self.queue_uploads.put(queue_file)'))
       self.queue_uploads.put(queue_file)
+      logger.debug('%s: %s' % (proc_name, 'finished'))
     return
 
 class Uploader(multiprocessing.Process):
@@ -152,14 +152,16 @@ class Uploader(multiprocessing.Process):
       logger.debug('%s: %s' % (proc_name, ' '.join(command)))
       if not config['dry_run']:
         if len(command) > 0:
-          with tempfile.NamedTemporaryFile() as tmpfile:
-            process = subprocess.Popen(command, stdout=tmpfile, stderr=subprocess.STDOUT)
-            exitcode = process.wait()
-            logger.info(tmpfile.readlines())
+          process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+          stdout_data, stderr_data = process.communicate()
+          logger.info('%s output on stdout: %s' % (proc_name, stdout_data))
+          logger.debug('%s output on stderr: %s' % (proc_name, stderr_data))
       else:
         time.sleep(random.random() * 0.1)
 
+      logger.debug('%s: %s' % (proc_name, 'self.queue_uploads.task_done()'))
       self.queue_uploads.task_done()
+      logger.debug('%s: %s' % (proc_name, 'finished'))
     return
 
 if __name__ == "__main__":
@@ -260,20 +262,27 @@ if __name__ == "__main__":
   encrypters = [ Encrypter(config, queue_encrypt, queue_uploads)
                 for i in range(num_consumers) ]
   for w in encrypters:
+    logger.debug('Encrypter %s: %s' % (w, 'started'))
     w.start()
 
   uploaders = [ Uploader(config, queue_uploads)
                 for i in range(num_consumers) ]
   for w in uploaders:
+    logger.debug('Uploader %s: %s' % (w, 'started'))
     w.start()
 
   for file_path in files:
+    logger.debug('Adding %s to queue_encrypt' % file_path)
     queue_encrypt.put(file_path)
 
   for i in range(num_consumers):
+    logger.debug('Adding "None" to queue_encrypt')
     queue_encrypt.put(None)
   queue_encrypt.join()
+  logger.debug('Reached: queue_encrypt.join()')
 
   for i in range(num_consumers):
+    logger.debug('Adding "None" to queue_uploads')
     queue_uploads.put(None)
   queue_uploads.join()
+  logger.debug('Reached: queue_uploads.join()')
